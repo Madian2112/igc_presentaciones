@@ -1,0 +1,68 @@
+.theme-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.toggle-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  transition: all 0.3s ease;
+}
+
+.toggle-track {
+  width: 60px;
+  height: 32px;
+  background: #e2e8f0;
+  border-radius: 16px;
+  position: relative;
+  transition: all 0.3s ease;
+  border: 2px solid #cbd5e0;
+}
+
+.toggle-btn.dark .toggle-track {
+  background: #4a5568;
+  border-color: #2d3748;
+}
+
+.toggle-thumb {
+  width: 24px;
+  height: 24px;
+  background: white;
+  border-radius: 50%;
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.toggle-btn.dark .toggle-thumb {
+  transform: translateX(28px);
+  background: #1a202c;
+}
+
+.toggle-icon {
+  font-size: 0.8rem;
+  transition: all 0.3s ease;
+}
+
+.toggle-label {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: #4a5568;
+  min-width: 40px;
+}
+
+.toggle-btn:hover .toggle-track {
+  transform: scale(1.05);
+}
+
+.toggle-btn:active .toggle-track {
+  transform: scale(0.95);
+}

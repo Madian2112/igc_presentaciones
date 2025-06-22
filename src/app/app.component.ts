@@ -12,12 +12,14 @@ import { SearchBarComponent } from './components/search-bar/search-bar.component
 import { MediaUploaderComponent } from "./components/media-uploader/media-uploader.component";
 import { PresentationOrganizerComponent } from "./components/presentation-organizer/presentation-organizer.component";
 import { ExportDialogComponent } from "./components/export-dialog/export-dialog.component";
+import { ThemeService } from './services/theme.service';
+import { ThemeToggleComponent } from "./components/theme-toggle/theme-toggle.component";
 
 @Component({
   selector: 'app-root',
   standalone: true,
   imports: [RouterOutlet, SongSelectorComponent, MediaSelectorComponent, PresentationBuilderComponent, ExportModalComponent,
-    SearchBarComponent, MediaUploaderComponent, PresentationOrganizerComponent, ExportDialogComponent],
+    SearchBarComponent, MediaUploaderComponent, PresentationOrganizerComponent, ExportDialogComponent, ThemeToggleComponent],
   templateUrl: './app.component.html',
   styleUrl: './app.component.css'
 })
@@ -30,43 +32,48 @@ export class AppComponent implements OnInit {
   processingMessage = ""
   processingDetail = ""
   processingProgress = 0
+  isDarkMode = false
 
   constructor(
     private presentationService: PresentationService,
     private songService: SongService,
+    private themeService: ThemeService,
   ) {}
 
   ngOnInit() {
+    this.isDarkMode = this.themeService.isDarkMode()
     this.initializeApplication()
   }
 
+  onThemeChanged(isDark: boolean) {
+    this.isDarkMode = isDark
+  }
+
   private async initializeApplication() {
-    this.showProcessing("Inicializando aplicación...", "Cargando recursos del sistema")
+    this.showProcessing("Initializing application...", "Loading system resources")
 
     try {
-      // Simulate application startup
       await this.delay(1000)
       this.updateProgress(25)
 
-      // Load available songs
-      this.processingDetail = "Escaneando directorio Public/letras/"
+      this.processingDetail = "Scanning Public/letras/ directory"
       await this.delay(800)
       this.updateProgress(50)
 
       this.availableSongs = await this.songService.loadAvailableSongs()
       this.updateProgress(75)
 
-      this.processingDetail = "Configurando interfaz de usuario"
+      this.processingDetail = "Setting up user interface"
       await this.delay(500)
       this.updateProgress(100)
 
       await this.delay(300)
       this.hideProcessing()
 
-      this.showNotification("Aplicación inicializada correctamente", "success")
+      this.showNotification("Application initialized successfully", "success")
     } catch (error) {
       this.hideProcessing()
-      this.showNotification("Error al inicializar la aplicación", "error")
+      this.showNotification("Error initializing application", "error")
     }
   }
 
@@ -75,22 +82,20 @@ export class AppComponent implements OnInit {
   }
 
   async onSongSelected(song: Song) {
-    this.showProcessing("Cargando letra de canción...", `Procesando ${song.name}`)
+    this.showProcessing("Loading song lyrics...", `Processing ${song.name}`)
 
     try {
-      // Simulate loading PowerPoint file
       this.updateProgress(20)
       await this.delay(800)
 
-      this.processingDetail = `Cargando ${song.source}`
+      this.processingDetail = `Loading ${song.source}`
       this.updateProgress(50)
       await this.delay(600)
 
-      this.processingDetail = "Extrayendo primera diapositiva"
+      this.processingDetail = "Extracting first slide preview"
       this.updateProgress(80)
       await this.delay(400)
 
-      // Create presentation item from song
       const presentationItem: PresentationItem = {
         id: `song-${Date.now()}`,
         name: song.name,
@@ -113,32 +118,31 @@ export class AppComponent implements OnInit {
       await this.delay(200)
       this.hideProcessing()
 
-      this.showNotification(`"${song.name}" agregada a la presentación`, "success")
+      this.showNotification(`"${song.name}" added to presentation`, "success")
       this.isLoadingSongs = false
     } catch (error) {
       this.hideProcessing()
-      this.showNotification("Error al cargar la canción", "error")
+      this.showNotification("Error loading song", "error")
       this.isLoadingSongs = false
     }
   }
 
   async onMediaUploaded(mediaItems: PresentationItem[]) {
-    this.showProcessing("Procesando archivos multimedia...", "Cargando archivos seleccionados")
+    this.showProcessing("Processing media files...", "Loading selected files")
 
     try {
       for (let i = 0; i < mediaItems.length; i++) {
         const item = mediaItems[i]
-        this.processingDetail = `Procesando ${item.name} (${i + 1}/${mediaItems.length})`
+        this.processingDetail = `Processing ${item.name} (${i + 1}/${mediaItems.length})`
         this.updateProgress((i / mediaItems.length) * 80)
 
-        // Assign position and add to presentation
         item.position = this.getNextPosition()
         this.presentationItems.push(item)
 
-        await this.delay(300) // Simulate processing time
+        await this.delay(300)
       }
 
-      this.processingDetail = "Finalizando carga de multimedia"
+      this.processingDetail = "Finalizing media upload"
       this.updateProgress(100)
       await this.delay(300)
 
@@ -146,39 +150,36 @@ export class AppComponent implements OnInit {
       this.hideProcessing()
 
       const count = mediaItems.length
-      this.showNotification(
-        `${count} archivo${count > 1 ? "s" : ""} agregado${count > 1 ? "s" : ""} a la presentación`,
-        "success",
-      )
+      this.showNotification(`${count} file${count > 1 ? "s" : ""} added to presentation`, "success")
     } catch (error) {
       this.hideProcessing()
-      this.showNotification("Error al procesar archivos multimedia", "error")
+      this.showNotification("Error processing media files", "error")
     }
   }
 
   onItemsReordered(items: PresentationItem[]) {
     this.presentationItems = items
     this.updatePositions()
-    this.showNotification("Orden de presentación actualizado", "info")
+    this.showNotification("Presentation order updated", "info")
   }
 
   onItemRemoved(index: number) {
     const removedItem = this.presentationItems[index]
     this.presentationItems.splice(index, 1)
     this.updatePositions()
-    this.showNotification(`"${removedItem.name}" eliminado de la presentación`, "info")
+    this.showNotification(`"${removedItem.name}" removed from presentation`, "info")
   }
 
   onItemPositionChanged(event: { index: number; position: number }) {
     const item = this.presentationItems[event.index]
     item.position = event.position
     this.sortItemsByPosition()
-    this.showNotification(`Posición de "${item.name}" actualizada`, "info")
+    this.showNotification(`Position of "${item.name}" updated`, "info")
   }
 
   openExportDialog() {
     if (this.presentationItems.length === 0) {
-      this.showNotification("Agrega elementos a tu presentación primero", "warning")
+      this.showNotification("Add elements to your presentation first", "warning")
       return
     }
     this.showExportDialog = true
@@ -190,35 +191,33 @@ export class AppComponent implements OnInit {
 
   async onExportConfirmed(exportData: { name: string; format: string; options: any }) {
     this.showExportDialog = false
-    this.showProcessing("Generando presentación...", `Creando ${exportData.name}.${exportData.format}`)
+    this.showProcessing("Generating presentation...", `Creating ${exportData.name}.${exportData.format}`)
 
     try {
-      // Simulate PowerPoint generation process
       this.updateProgress(10)
-      this.processingDetail = "Inicializando generador de PowerPoint"
+      this.processingDetail = "Initializing PowerPoint generator"
       await this.delay(800)
 
       this.updateProgress(25)
-      this.processingDetail = "Procesando letras de canciones"
+      this.processingDetail = "Processing song lyrics"
       await this.delay(1000)
 
       this.updateProgress(45)
-      this.processingDetail = "Integrando videos e imágenes"
+      this.processingDetail = "Integrating media assets"
       await this.delay(1200)
 
       this.updateProgress(65)
-      this.processingDetail = "Aplicando transiciones y efectos"
+      this.processingDetail = "Applying transitions and effects"
       await this.delay(800)
 
       this.updateProgress(80)
-      this.processingDetail = "Optimizando presentación"
+      this.processingDetail = "Optimizing presentation"
       await this.delay(600)
 
       this.updateProgress(95)
-      this.processingDetail = "Finalizando archivo"
+      this.processingDetail = "Finalizing export"
       await this.delay(400)
 
-      // Generate and download the presentation
       await this.presentationService.generatePresentation(
         this.presentationItems,
         exportData.name,
@@ -230,10 +229,10 @@ export class AppComponent implements OnInit {
       await this.delay(300)
       this.hideProcessing()
 
-      this.showNotification(`Presentación "${exportData.name}" generada exitosamente`, "success")
+      this.showNotification(`Presentation "${exportData.name}" generated successfully`, "success")
     } catch (error) {
       this.hideProcessing()
-      this.showNotification("Error al generar la presentación", "error")
+      this.showNotification("Error generating presentation", "error")
     }
   }
 
@@ -253,7 +252,6 @@ export class AppComponent implements OnInit {
   }
 
   private async generateSongThumbnail(song: Song): Promise<string> {
-    // Simulate thumbnail generation
     const canvas = document.createElement("canvas")
     canvas.width = 320
     canvas.height = 180
@@ -261,8 +259,13 @@ export class AppComponent implements OnInit {
 
     // Create gradient background
     const gradient = ctx.createLinearGradient(0, 0, 320, 180)
-    gradient.addColorStop(0, "#667eea")
-    gradient.addColorStop(1, "#764ba2")
+    if (this.isDarkMode) {
+      gradient.addColorStop(0, "#4c1d95")
+      gradient.addColorStop(1, "#1e1b4b")
+    } else {
+      gradient.addColorStop(0, "#667eea")
+      gradient.addColorStop(1, "#764ba2")
+    }
     ctx.fillStyle = gradient
     ctx.fillRect(0, 0, 320, 180)
 
@@ -274,7 +277,7 @@ export class AppComponent implements OnInit {
 
     // Add slide count
     ctx.font = "16px Arial"
-    ctx.fillText(`${song.slideCount} diapositivas`, 160, 120)
+    ctx.fillText(`${song.slideCount} slides`, 160, 120)
 
     return canvas.toDataURL()
   }
@@ -324,7 +327,7 @@ export class AppComponent implements OnInit {
 
   private showNotification(message: string, type: "success" | "error" | "warning" | "info" = "info") {
     const notification = document.createElement("div")
-    notification.className = `notification notification-${type}`
+    notification.className = `notification notification-${type} ${this.isDarkMode ? "dark-mode" : ""}`
     notification.innerHTML = `
       <div class="notification-content">
         <span class="notification-icon">${this.getNotificationIcon(type)}</span>

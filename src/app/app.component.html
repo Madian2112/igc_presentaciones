@@ -1,34 +1,46 @@
-<div class="app-container">
+<div class="app-container" [class.dark-mode]="isDarkMode">
   <!-- Background Animation -->
   <div class="background-animation">
     <div class="floating-element element-1"></div>
     <div class="floating-element element-2"></div>
     <div class="floating-element element-3"></div>
+    <div class="floating-element element-4"></div>
   </div>
 
   <!-- Header -->
   <header class="app-header">
     <div class="header-content">
       <div class="logo-section">
-        <div class="app-logo">🎵</div>
+        <div class="app-logo">
+          <span class="logo-icon">🎵</span>
+        </div>
         <div class="app-title">
-          <h1>Generador de Presentaciones</h1>
-          <p>Sistema completo para presentaciones de iglesia</p>
+          <h1>Church Presentation Studio</h1>
+          <p>Professional presentation automation system</p>
         </div>
       </div>
-      <div class="app-stats">
-        <div class="stat-card">
-          <span class="stat-number">{{ presentationItems.length }}</span>
-          <span class="stat-label">Elementos</span>
+      <div class="header-controls">
+        <div class="app-stats">
+          <div class="stat-card">
+            <div class="stat-content">
+              <span class="stat-number">{{ presentationItems.length }}</span>
+              <span class="stat-label">Elements</span>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-content">
+              <span class="stat-number">{{ getTotalSlides() }}</span>
+              <span class="stat-label">Slides</span>
+            </div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-content">
+              <span class="stat-number">{{ getEstimatedDuration() }}</span>
+              <span class="stat-label">Minutes</span>
+            </div>
+          </div>
         </div>
-        <div class="stat-card">
-          <span class="stat-number">{{ getTotalSlides() }}</span>
-          <span class="stat-label">Diapositivas</span>
-        </div>
-        <div class="stat-card">
-          <span class="stat-number">{{ getEstimatedDuration() }}</span>
-          <span class="stat-label">Minutos</span>
-        </div>
+        <app-theme-toggle (themeChanged)="onThemeChanged($event)"></app-theme-toggle>
       </div>
     </div>
   </header>
@@ -42,8 +54,8 @@
           <span class="step-number">1</span>
         </div>
         <div class="section-title">
-          <h2>Selección de Letras</h2>
-          <p>Busca y selecciona las canciones desde Public/letras/</p>
+          <h2>Song Library</h2>
+          <p>Search and select songs from Public/letras/ directory</p>
         </div>
       </div>
       <app-search-bar
@@ -61,8 +73,8 @@
           <span class="step-number">2</span>
         </div>
         <div class="section-title">
-          <h2>Carga de Multimedia</h2>
-          <p>Sube videos e imágenes desde tu computadora</p>
+          <h2>Media Assets</h2>
+          <p>Upload and manage videos and images</p>
         </div>
       </div>
       <app-media-uploader
@@ -77,8 +89,8 @@
           <span class="step-number">3</span>
         </div>
         <div class="section-title">
-          <h2>Organización de Presentación</h2>
-          <p>Ordena todos los elementos de tu presentación</p>
+          <h2>Presentation Builder</h2>
+          <p>Organize and sequence your presentation elements</p>
         </div>
       </div>
       <app-presentation-organizer
@@ -97,15 +109,17 @@
             <span class="step-number">4</span>
           </div>
           <div class="section-title">
-            <h2>Exportar Presentación</h2>
-            <p>Genera tu presentación PowerPoint personalizada</p>
+            <h2>Export & Generate</h2>
+            <p>Create your final PowerPoint presentation</p>
           </div>
         </div>
         <div class="export-section">
           <button class="export-trigger-btn" (click)="openExportDialog()">
             <span class="export-icon">📊</span>
-            <span>Exportar Presentación</span>
-            <span class="export-count">({{ presentationItems.length }} elementos)</span>
+            <div class="export-content">
+              <span class="export-text">Generate Presentation</span>
+              <span class="export-count">{{ presentationItems.length }} elements ready</span>
+            </div>
           </button>
         </div>
       </section>
@@ -128,8 +142,11 @@
         <div class="loading-spinner"></div>
         <h3>{{ processingMessage }}</h3>
         <p>{{ processingDetail }}</p>
-        <div class="progress-bar">
-          <div class="progress-fill" [style.width.%]="processingProgress"></div>
+        <div class="progress-container">
+          <div class="progress-bar">
+            <div class="progress-fill" [style.width.%]="processingProgress"></div>
+          </div>
+          <span class="progress-text">{{ processingProgress }}%</span>
         </div>
       </div>
     </div>

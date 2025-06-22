@@ -305,7 +305,7 @@ export class PresentationOrganizerComponent {
   draggedIndex: number | null = null
   dragOverIndex: number | null = null
   previewingItem: PresentationItem | null = null
-  isCompactView = false
+  isCompactView = true
 
   trackByItem(index: number, item: PresentationItem): string {
     return item.id
