@@ -1,66 +1,34 @@
 import { Injectable } from "@angular/core"
 import type { PresentationItem, ExportOptions } from "../models/presentation.model"
+import { PowerpointGeneratorService } from "./powerpoint-generator.service"
 
 @Injectable({
   providedIn: "root",
 })
 export class PresentationService {
+  constructor(private powerPointGenerator: PowerpointGeneratorService) {}
+
   async generatePresentation(
     items: PresentationItem[],
     name: string,
     format: string,
     options: ExportOptions,
   ): Promise<void> {
-    // Simulate PowerPoint generation
-    const presentationData = {
-      name: name,
-      format: format,
-      createdAt: new Date().toISOString(),
-      totalSlides: this.calculateTotalSlides(items),
-      items: items.map((item) => ({
-        ...item,
-        // Remove blob URLs for serialization
-        source: item.source.startsWith("blob:") ? `[Local File: ${item.name}]` : item.source,
-      })),
-      options: options,
-      metadata: {
-        generator: "Church Presentation Generator",
-        version: "1.0.0",
-        songs: items.filter((item) => item.type === "song").length,
-        videos: items.filter((item) => item.type === "video").length,
-        images: items.filter((item) => item.type === "image").length,
-      },
+    try {
+      console.log("🔄 Starting presentation generation...")
+
+      if (format === "pptx") {
+        // Use real PowerPoint generation
+        await this.powerPointGenerator.generatePowerPoint(items, name, options)
+        console.log("✅ PowerPoint presentation generated successfully!")
+      } else {
+        // Fallback for other formats
+        await this.generateFallbackFormat(items, name, format, options)
+      }
+    } catch (error) {
+      console.error("❌ Presentation generation failed:", error)
+      throw new Error(`Failed to generate presentation: ${error instanceof Error ? error.message : "Unknown error"}`)
     }
-
-    // Create downloadable file based on format
-    let blob: Blob
-    let filename: string
-
-    switch (format) {
-      case "pptx":
-        // In a real implementation, this would use a library like PptxGenJS
-        blob = new Blob([JSON.stringify(presentationData, null, 2)], {
-          type: "application/json",
-        })
-        filename = `${name}_presentation_config.json`
-        break
-
-      case "pdf":
-        blob = new Blob([this.generatePDFContent(presentationData)], {
-          type: "application/pdf",
-        })
-        filename = `${name}.pdf`
-        break
-
-      default:
-        blob = new Blob([JSON.stringify(presentationData, null, 2)], {
-          type: "application/json",
-        })
-        filename = `${name}_config.json`
-    }
-
-    // Download the file
-    this.downloadFile(blob, filename)
   }
 
   private calculateTotalSlides(items: PresentationItem[]): number {
@@ -135,5 +103,50 @@ startxref
     a.click()
     document.body.removeChild(a)
     URL.revokeObjectURL(url)
+  }
+
+  private async generateFallbackFormat(
+    items: PresentationItem[],
+    name: string,
+    format: string,
+    options: ExportOptions,
+  ): Promise<void> {
+    const presentationData = {
+      name: name,
+      format: format,
+      createdAt: new Date().toISOString(),
+      totalSlides: this.calculateTotalSlides(items),
+      items: items.map((item) => ({
+        ...item,
+        source: item.source.startsWith("blob:") ? `[Local File: ${item.name}]` : item.source,
+      })),
+      options: options,
+      metadata: {
+        generator: "Church Presentation Generator",
+        version: "2.0.0",
+        songs: items.filter((item) => item.type === "song").length,
+        videos: items.filter((item) => item.type === "video").length,
+        images: items.filter((item) => item.type === "image").length,
+      },
+    }
+
+    let blob: Blob
+    let filename: string
+
+    switch (format) {
+      case "pdf":
+        blob = new Blob([this.generatePDFContent(presentationData)], {
+          type: "application/pdf",
+        })
+        filename = `${name}.pdf`
+        break
+      default:
+        blob = new Blob([JSON.stringify(presentationData, null, 2)], {
+          type: "application/json",
+        })
+        filename = `${name}_config.json`
+    }
+
+    this.downloadFile(blob, filename)
   }
 }

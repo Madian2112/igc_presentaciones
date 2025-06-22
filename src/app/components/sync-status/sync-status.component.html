@@ -1,0 +1,26 @@
+    <div class="sync-status">
+      <div class="sync-indicator" [class.error]="googleDriveError()" [class.success]="!googleDriveError()">
+        <span class="sync-icon">{{ googleDriveError() ? '⚠️' : '☁️' }}</span>
+        <div class="sync-details">
+          @if (!googleDriveError()) {
+            <span class="sync-text">Google Drive Connected</span>
+          }
+          @if (googleDriveError()) {
+            <span class="sync-text error">Google Drive Error</span>
+          }
+          @if (lastSyncTime()) {
+            <span class="sync-time">
+              Last sync: {{ lastSyncTime() | date:'short' }}
+            </span>
+          }
+        </div>
+        @if (googleDriveError()) {
+          <button
+            class="retry-btn"
+            (click)="retryGoogleDriveConnection.emit()"
+            title="Retry Google Drive connection">
+            🔄
+          </button>
+        }
+      </div>
+    </div>

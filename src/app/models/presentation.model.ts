@@ -9,6 +9,11 @@ export interface Song {
     album?: string
     year?: number
     genre?: string
+    fileSize?: number
+    mimeType?: string
+    thumbnailUrl?: string
+    driveFileId?: string
+    lastModified?: string
   }
 }
 

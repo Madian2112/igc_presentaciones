@@ -1,0 +1,76 @@
+.sync-status {
+  margin-left: 1rem;
+}
+
+.sync-indicator {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  background: var(--card-bg);
+  border: 2px solid var(--border-secondary);
+  transition: all 0.3s ease;
+}
+
+.sync-indicator.success {
+  border-color: var(--success-color);
+  background: var(--success-bg);
+}
+
+.sync-indicator.error {
+  border-color: var(--error-color);
+  background: var(--error-bg);
+}
+
+.sync-icon {
+  font-size: 1.2rem;
+}
+
+.sync-details {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.sync-text {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.sync-text.error {
+  color: var(--error-color);
+}
+
+.sync-time {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.retry-btn {
+  background: none;
+  border: none;
+  font-size: 1rem;
+  cursor: pointer;
+  padding: 0.25rem;
+  border-radius: 0.25rem;
+  transition: background-color 0.2s ease;
+}
+
+.retry-btn:hover {
+  background: var(--hover-bg);
+}
+
+/* CSS Variables for status colors */
+:root {
+  --success-color: #10b981;
+  --success-bg: rgba(16, 185, 129, 0.1);
+  --error-color: #ef4444;
+  --error-bg: rgba(239, 68, 68, 0.1);
+}
+
+.dark-mode {
+  --success-bg: rgba(16, 185, 129, 0.15);
+  --error-bg: rgba(239, 68, 68, 0.15);
+}

@@ -45,6 +45,14 @@
     </div>
   </header>
 
+  @if (googleDriveError || lastSyncTime) {
+
+    <app-sync-status [googleDriveError]="googleDriveError" [lastSyncTime]="lastSyncTime" 
+    (retryGoogleDriveConnection)="retryGoogleDriveConnection()">
+    </app-sync-status>
+
+  }
+
   <!-- Main Content -->
   <main class="app-main">
     <!-- Step 1: Song Search and Selection -->

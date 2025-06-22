@@ -1,46 +1,74 @@
-import { Component, EventEmitter, Output } from "@angular/core"
+import { Component, EventEmitter, OnDestroy, OnInit, Output } from "@angular/core"
 
 import { FormsModule } from "@angular/forms"
 import type { PresentationItem } from "../../models/presentation-item.model"
+import { Song } from "../../models/presentation.model"
+import { debounceTime, distinctUntilChanged, Subject, takeUntil } from "rxjs"
+import { SongService } from "../../services/song.service"
 
 @Component({
   selector: "app-song-selector",
   standalone: true,
   imports: [FormsModule],
   template: `
-    <div class="song-selector">
-      <div class="selector-header">
-        <div class="header-title">
-          <div class="header-icon">🎵</div>
-          <div>
-            <h3>Letras de Canciones</h3>
-            <p>Desde la carpeta Public/letras/</p>
+  <div class="song-selector">
+    <div class="selector-header">
+      <div class="header-title">
+        <div class="header-icon">🎵</div>
+        <div>
+          <h3>Letras de Canciones</h3>
+          <p>Desde Google Drive - {{ displayedSongs.length }} canciones</p>
+        </div>
+      </div>
+      <button class="refresh-btn" (click)="refreshSongs()" [disabled]="isLoading">
+        <span class="refresh-icon" [class.spinning]="isLoading">↻</span>
+        {{ isLoading ? 'Cargando...' : 'Actualizar' }}
+      </button>
+    </div>
+  
+    <div class="search-container">
+      <div class="search-input-wrapper">
+        <span class="search-icon">🔍</span>
+        <input
+          type="text"
+          placeholder="Buscar canción por título, artista o género..."
+          class="search-input"
+          [(ngModel)]="searchTerm"
+          (input)="onSearchInput($event)"
+          [class.searching]="isSearching">
+        @if (searchTerm) {
+          <button
+            class="clear-search-btn"
+            (click)="clearSearch()"
+            title="Limpiar búsqueda">
+            ×
+          </button>
+        }
+      </div>
+      @if (searchTerm) {
+        <div class="search-status">
+          <span class="search-results-count">
+            {{ filteredSongs.length }} resultado{{ filteredSongs.length !== 1 ? 's' : '' }}
+            {{ isSearching ? '(buscando...)' : '' }}
+          </span>
+        </div>
+      }
+    </div>
+  
+    @if (!isLoading) {
+      <div class="songs-container">
+        @if (showScrollIndicator) {
+          <div class="scroll-indicator">
+            <span class="scroll-text">Desliza para ver más canciones</span>
+            <span class="scroll-arrow">↓</span>
           </div>
-        </div>
-        <button class="refresh-btn" (click)="refreshSongs()" [disabled]="isLoading">
-          <span class="refresh-icon" [class.spinning]="isLoading">↻</span>
-          {{ isLoading ? 'Cargando...' : 'Actualizar' }}
-        </button>
-      </div>
-    
-      <div class="search-container">
-        <div class="search-input-wrapper">
-          <span class="search-icon">🔍</span>
-          <input
-            type="text"
-            placeholder="Buscar canción..."
-            class="search-input"
-            [(ngModel)]="searchTerm"
-            (input)="filterSongs()">
-        </div>
-      </div>
-    
-      @if (!isLoading) {
-        <div class="songs-list">
-          @for (song of filteredSongs; track trackBySong($index, song)) {
+        }
+        <div class="songs-list" [class.scrollable]="showScrollIndicator">
+          @for (song of displayedSongs; track trackBySong(i, song); let i = $index) {
             <div
               class="song-item"
               [class.featured]="song.name === 'Ruido'"
+              [class.search-highlight]="searchTerm && song.name.toLowerCase().includes(searchTerm.toLowerCase())"
               (click)="selectSong(song)">
               <div class="song-preview">
                 <div class="song-thumbnail">
@@ -48,11 +76,17 @@ import type { PresentationItem } from "../../models/presentation-item.model"
                   @if (song.name === 'Ruido') {
                     <div class="file-badge">NUEVO</div>
                   }
+                  <div class="position-badge">{{ i + 1 }}</div>
                 </div>
                 <div class="song-info">
-                  <span class="song-name">{{ song.name }}</span>
+                  <span class="song-name" [innerHTML]="highlightSearchTerm(song.name)"></span>
                   <span class="song-details">
                     <span class="slide-count">{{ song.slideCount }} diapositivas</span>
+                    @if (song.metadata?.artist) {
+                      <span class="artist-info">
+                        por {{ song.metadata?.artist }}
+                      </span>
+                    }
                     <span class="file-path">{{ song.source }}</span>
                   </span>
                 </div>
@@ -68,62 +102,68 @@ import type { PresentationItem } from "../../models/presentation-item.model"
             </div>
           }
         </div>
-      }
-    
-      @if (isLoading) {
-        <div class="loading-state">
-          <div class="loading-animation">
-            <div class="loading-spinner"></div>
-            <div class="loading-dots">
-              <span></span>
-              <span></span>
-              <span></span>
-            </div>
-          </div>
-          <p>Escaneando carpeta Public/letras/...</p>
-          <div class="loading-progress">
-            <div class="progress-bar" [style.width.%]="loadingProgress"></div>
+      </div>
+    }
+  
+    @if (isLoading) {
+      <div class="loading-state">
+        <div class="loading-animation">
+          <div class="loading-spinner"></div>
+          <div class="loading-dots">
+            <span></span>
+            <span></span>
+            <span></span>
           </div>
         </div>
-      }
-    
-      @if (!isLoading && filteredSongs.length === 0) {
-        <div class="empty-state">
-          <div class="empty-icon">🎵</div>
-          <h4>No se encontraron canciones</h4>
-          <p>Intenta con otro término de búsqueda</p>
+        <p>Cargando canciones desde Google Drive...</p>
+        <div class="loading-progress">
+          <div class="progress-bar" [style.width.%]="loadingProgress"></div>
         </div>
-      }
-    
-      <!-- Preview Modal -->
-      @if (previewingSong) {
-        <div class="preview-modal" (click)="closePreview()">
-          <div class="preview-content" (click)="$event.stopPropagation()">
-            <div class="preview-header">
-              <h3>Vista Previa: {{ previewingSong.name }}</h3>
-              <button class="close-btn" (click)="closePreview()">×</button>
-            </div>
-            <div class="preview-slides">
-              @for (slide of getPreviewSlides(previewingSong); track slide; let i = $index) {
-                <div class="slide-preview">
-                  <div class="slide-number">Diapositiva {{ i + 1 }}</div>
-                  <div class="slide-content">{{ slide }}</div>
-                </div>
-              }
-            </div>
-            <div class="preview-actions">
-              <button class="add-from-preview-btn" (click)="addFromPreview()">
-                Agregar a Presentación
-              </button>
-            </div>
+      </div>
+    }
+  
+    @if (!isLoading && displayedSongs.length === 0) {
+      <div class="empty-state">
+        <div class="empty-icon">🎵</div>
+        <h4>{{ searchTerm ? 'No se encontraron canciones' : 'No hay canciones disponibles' }}</h4>
+        <p>{{ searchTerm ? 'Intenta con otro término de búsqueda' : 'Verifica la conexión con Google Drive' }}</p>
+        @if (searchTerm) {
+          <button class="clear-search-btn-large" (click)="clearSearch()">
+            Mostrar todas las canciones
+          </button>
+        }
+      </div>
+    }
+  
+    <!-- Preview Modal -->
+    @if (previewingSong) {
+      <div class="preview-modal" (click)="closePreview()">
+        <div class="preview-content" (click)="$event.stopPropagation()">
+          <div class="preview-header">
+            <h3>Vista Previa: {{ previewingSong?.name }}</h3>
+            <button class="close-btn" (click)="closePreview()">×</button>
+          </div>
+          <div class="preview-slides">
+            @for (slide of getPreviewSlides(previewingSong); track slide; let i = $index) {
+              <div class="slide-preview">
+                <div class="slide-number">Diapositiva {{ i + 1 }}</div>
+                <div class="slide-content">{{ slide }}</div>
+              </div>
+            }
+          </div>
+          <div class="preview-actions">
+            <button class="add-from-preview-btn" (click)="addFromPreview()">
+              Agregar a Presentación
+            </button>
           </div>
         </div>
-      }
-    </div>
-    `,
+      </div>
+    }
+  </div>
+  `,
   styleUrls: ["./song-selector.component.css"],
 })
-export class SongSelectorComponent {
+export class SongSelectorComponent implements OnInit, OnDestroy {
   @Output() songSelected = new EventEmitter<PresentationItem>()
 
   searchTerm = ""
@@ -131,68 +171,149 @@ export class SongSelectorComponent {
   loadingProgress = 0
   previewingSong: PresentationItem | null = null
 
-  // Simulación de canciones desde Public/letras/ incluyendo "Ruido.pptx"
-  songs: PresentationItem[] = [
-    {
-      id: "1",
-      name: "Ruido",
-      type: "song",
-      slideCount: 6,
-      source: "Public/letras/Ruido.pptx",
-      metadata: {
-        createdAt: new Date().toISOString(),
-        format: "pptx",
-      },
-    },
-    { id: "2", name: "Amazing Grace", type: "song", slideCount: 4, source: "Public/letras/Amazing_Grace.pptx" },
-    {
-      id: "3",
-      name: "How Great Thou Art",
-      type: "song",
-      slideCount: 5,
-      source: "Public/letras/How_Great_Thou_Art.pptx",
-    },
-    { id: "4", name: "Blessed Assurance", type: "song", slideCount: 3, source: "Public/letras/Blessed_Assurance.pptx" },
-    {
-      id: "5",
-      name: "Great Is Thy Faithfulness",
-      type: "song",
-      slideCount: 4,
-      source: "Public/letras/Great_Is_Thy_Faithfulness.pptx",
-    },
-    { id: "6", name: "Holy Holy Holy", type: "song", slideCount: 3, source: "Public/letras/Holy_Holy_Holy.pptx" },
-    { id: "7", name: "It Is Well", type: "song", slideCount: 4, source: "Public/letras/It_Is_Well.pptx" },
-    { id: "8", name: "Jesus Loves Me", type: "song", slideCount: 2, source: "Public/letras/Jesus_Loves_Me.pptx" },
-    {
-      id: "9",
-      name: "What A Friend We Have In Jesus",
-      type: "song",
-      slideCount: 4,
-      source: "Public/letras/What_A_Friend.pptx",
-    },
-    { id: "10", name: "Sublime Gracia", type: "song", slideCount: 5, source: "Public/letras/Sublime_Gracia.pptx" },
-    {
-      id: "11",
-      name: "Cuán Grande Es Él",
-      type: "song",
-      slideCount: 4,
-      source: "Public/letras/Cuan_Grande_Es_El.pptx",
-    },
-    { id: "12", name: "Cristo Vive", type: "song", slideCount: 3, source: "Public/letras/Cristo_Vive.pptx" },
-  ]
+  // Enhanced properties for new functionality
+  allSongs: Song[] = []
+  filteredSongs: Song[] = []
+  displayedSongs: Song[] = []
+  isSearching = false
+  searchResults: Song[] = []
+  showScrollIndicator = false
 
-  filteredSongs = [...this.songs]
+  private destroy$ = new Subject<void>()
+  private searchSubject = new Subject<string>()
 
-  trackBySong(index: number, song: PresentationItem): string {
+  constructor(private songService: SongService) {
+    // Setup real-time search with debouncing
+    this.searchSubject
+      .pipe(debounceTime(300), distinctUntilChanged(), takeUntil(this.destroy$))
+      .subscribe((searchTerm) => {
+        this.performSearch(searchTerm)
+      })
+  }
+
+  async ngOnInit() {
+    await this.loadSongsFromDrive()
+  }
+
+  ngOnDestroy() {
+    this.destroy$.next()
+    this.destroy$.complete()
+  }
+
+  private async loadSongsFromDrive() {
+    this.isLoading = true
+    this.loadingProgress = 0
+
+    try {
+      // Simulate progressive loading for better UX
+      const progressInterval = setInterval(() => {
+        if (this.loadingProgress < 80) {
+          this.loadingProgress += 10
+        }
+      }, 200)
+
+      this.allSongs = await this.songService.loadAvailableSongs()
+
+      clearInterval(progressInterval)
+      this.loadingProgress = 100
+
+      // Sort songs alphabetically by title
+      this.sortSongsAlphabetically()
+
+      // Initialize filtered songs
+      this.filteredSongs = [...this.allSongs]
+      this.updateDisplayedSongs()
+
+      await this.delay(300)
+      this.isLoading = false
+      this.loadingProgress = 0
+
+      this.showNotification(`Loaded ${this.allSongs.length} songs from Google Drive`, "success")
+    } catch (error) {
+      this.isLoading = false
+      this.showNotification("Failed to load songs from Google Drive", "error")
+      console.error("Error loading songs:", error)
+    }
+  }
+
+  private sortSongsAlphabetically() {
+    this.allSongs.sort((a, b) => {
+      return a.name.toLowerCase().localeCompare(b.name.toLowerCase())
+    })
+  }
+
+  private updateDisplayedSongs() {
+    this.displayedSongs = this.filteredSongs
+    this.showScrollIndicator = this.displayedSongs.length > 9
+  }
+
+  onSearchInput(event: Event) {
+    const target = event.target as HTMLInputElement
+    this.searchTerm = target.value
+    this.searchSubject.next(this.searchTerm)
+  }
+
+  private async performSearch(searchTerm: string) {
+    this.isSearching = true
+
+    if (!searchTerm.trim()) {
+      // Reset to all songs when search is empty
+      this.filteredSongs = [...this.allSongs]
+      this.isSearching = false
+      this.updateDisplayedSongs()
+      return
+    }
+
+    try {
+      // Filter songs based on search term
+      this.filteredSongs = this.allSongs.filter(
+        (song) =>
+          song.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          (song.metadata?.artist && song.metadata.artist.toLowerCase().includes(searchTerm.toLowerCase())) ||
+          (song.metadata?.genre && song.metadata.genre.toLowerCase().includes(searchTerm.toLowerCase())),
+      )
+
+      this.updateDisplayedSongs()
+      this.isSearching = false
+    } catch (error) {
+      this.isSearching = false
+      this.showNotification("Search failed", "error")
+      console.error("Search error:", error)
+    }
+  }
+
+  clearSearch() {
+    this.searchTerm = ""
+    this.filteredSongs = [...this.allSongs]
+    this.updateDisplayedSongs()
+    this.isSearching = false
+  }
+
+  async refreshSongs() {
+    await this.loadSongsFromDrive()
+  }
+
+  trackBySong(index: number, song: Song): string {
     return song.id
   }
 
-  filterSongs() {
-    this.filteredSongs = this.songs.filter((song) => song.name.toLowerCase().includes(this.searchTerm.toLowerCase()))
-  }
+  selectSong(song: Song) {
+    // Convert Song to PresentationItem
+    const presentationItem: PresentationItem = {
+      id: `song-${Date.now()}`,
+      name: song.name,
+      type: "song",
+      source: song.source,
+      slideCount: song.slideCount,
+      position: 0, // Will be set by parent component
+      metadata: {
+        format: "pptx",
+        createdAt: new Date().toISOString(),
+        originalSong: song,
+      },
+    }
 
-  selectSong(song: PresentationItem) {
-    // Animación de selección
+    // Animation effect
     const songElement = event?.target as HTMLElement
     const songItem = songElement.closest(".song-item") as HTMLElement
     if (songItem) {
@@ -202,13 +323,26 @@ export class SongSelectorComponent {
       }, 150)
     }
 
-    this.songSelected.emit({ ...song })
-    this.showNotification(`"${song.name}" agregada a la presentación`)
+    this.songSelected.emit(presentationItem)
+    this.showNotification(`"${song.name}" added to presentation`, "success")
   }
 
-  previewSong(song: PresentationItem, event: Event) {
+  previewSong(song: Song, event: Event) {
     event.stopPropagation()
-    this.previewingSong = song
+
+    // Convert Song to PresentationItem for preview
+    const presentationItem: PresentationItem = {
+      id: song.id,
+      name: song.name,
+      type: "song",
+      source: song.source,
+      slideCount: song.slideCount,
+      metadata: {
+        originalSong: song,
+      },
+    }
+
+    this.previewingSong = presentationItem
   }
 
   closePreview() {
@@ -217,13 +351,19 @@ export class SongSelectorComponent {
 
   addFromPreview() {
     if (this.previewingSong) {
-      this.selectSong(this.previewingSong)
+      this.selectSong(this.previewingSong.metadata?.originalSong as Song)
       this.closePreview()
     }
   }
 
-  getPreviewSlides(song: PresentationItem): string[] {
-    // Simulate slide content based on song name
+  getPreviewSlides(item: PresentationItem): string[] {
+    const song = item.metadata?.originalSong as Song
+
+    if (song?.lyrics && song.lyrics.length > 0) {
+      return song.lyrics
+    }
+
+    // Fallback to simulated content
     const slides: { [key: string]: string[] } = {
       Ruido: [
         "🎵 RUIDO 🎵",
@@ -236,35 +376,28 @@ export class SongSelectorComponent {
     }
 
     return (
-      slides[song.name] ||
-      Array.from({ length: song.slideCount || 1 }, (_, i) => `Contenido de la diapositiva ${i + 1}`)
+      slides[item.name] ||
+      Array.from({ length: item.slideCount || 1 }, (_, i) => `Contenido de la diapositiva ${i + 1}`)
     )
   }
 
-  refreshSongs() {
-    this.isLoading = true
-    this.loadingProgress = 0
-
-    // Simulate progressive loading
-    const interval = setInterval(() => {
-      this.loadingProgress += 20
-      if (this.loadingProgress >= 100) {
-        clearInterval(interval)
-        setTimeout(() => {
-          this.isLoading = false
-          this.loadingProgress = 0
-          this.showNotification("Biblioteca actualizada desde Public/letras/")
-        }, 500)
-      }
-    }, 400)
-  }
-
-  private showNotification(message: string) {
+  private showNotification(message: string, type: "success" | "error" = "success") {
     const notification = document.createElement("div")
-    notification.className = "mini-notification"
+    notification.className = `mini-notification ${type}`
     notification.textContent = message
     document.body.appendChild(notification)
 
     setTimeout(() => notification.remove(), 2000)
+  }
+
+  private delay(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms))
+  }
+
+  highlightSearchTerm(text: string): string {
+    if (!this.searchTerm) return text
+
+    const regex = new RegExp(`(${this.searchTerm})`, "gi")
+    return text.replace(regex, '<mark class="search-highlight-text">$1</mark>')
   }
 }

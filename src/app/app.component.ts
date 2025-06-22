@@ -14,12 +14,15 @@ import { PresentationOrganizerComponent } from "./components/presentation-organi
 import { ExportDialogComponent } from "./components/export-dialog/export-dialog.component";
 import { ThemeService } from './services/theme.service';
 import { ThemeToggleComponent } from "./components/theme-toggle/theme-toggle.component";
+import { GoogleDriveService } from './services/google-drive.service';
+import { PowerpointGeneratorService } from './services/powerpoint-generator.service';
+
+import { SyncStatusComponent } from "./components/sync-status/sync-status.component";
 
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [RouterOutlet, SongSelectorComponent, MediaSelectorComponent, PresentationBuilderComponent, ExportModalComponent,
-    SearchBarComponent, MediaUploaderComponent, PresentationOrganizerComponent, ExportDialogComponent, ThemeToggleComponent],
+  imports: [RouterOutlet, SongSelectorComponent, MediaSelectorComponent, PresentationBuilderComponent, ExportModalComponent, SearchBarComponent, MediaUploaderComponent, PresentationOrganizerComponent, ExportDialogComponent, ThemeToggleComponent, SyncStatusComponent],
   templateUrl: './app.component.html',
   styleUrl: './app.component.css'
 })
@@ -32,15 +35,22 @@ export class AppComponent implements OnInit {
   processingMessage = ""
   processingDetail = ""
   processingProgress = 0
-  isDarkMode = false
+  isDarkMode = true // Default to dark mode
+  googleDriveError: string | null = null
+  lastSyncTime: Date | null = null
+  isOnline = navigator.onLine
 
   constructor(
     private presentationService: PresentationService,
     private songService: SongService,
     private themeService: ThemeService,
+    private googleDriveService: GoogleDriveService,
+    private powerPointGenerator: PowerpointGeneratorService,
   ) {}
 
   ngOnInit() {
+    // Initialize theme first
+    this.themeService.initializeTheme()
     this.isDarkMode = this.themeService.isDarkMode()
     this.initializeApplication()
   }
@@ -56,11 +66,22 @@ export class AppComponent implements OnInit {
       await this.delay(1000)
       this.updateProgress(25)
 
-      this.processingDetail = "Scanning Public/letras/ directory"
+      this.processingDetail = "Connecting to Google Drive"
       await this.delay(800)
-      this.updateProgress(50)
+      this.updateProgress(40)
 
-      this.availableSongs = await this.songService.loadAvailableSongs()
+      try {
+        this.availableSongs = await this.songService.loadAvailableSongs()
+        this.lastSyncTime = new Date()
+        this.googleDriveError = null
+        this.processingDetail = `Loaded ${this.availableSongs.length} songs from Google Drive`
+      } catch (error) {
+        console.warn("Google Drive connection failed:", error)
+        this.googleDriveError = error instanceof Error ? error.message : "Unknown error"
+        this.processingDetail = "Loading local song library"
+        // Songs service will automatically fallback to local songs
+      }
+
       this.updateProgress(75)
 
       this.processingDetail = "Setting up user interface"
@@ -70,7 +91,11 @@ export class AppComponent implements OnInit {
       await this.delay(300)
       this.hideProcessing()
 
-      this.showNotification("Application initialized successfully", "success")
+      if (this.googleDriveError) {
+        this.showNotification(`Google Drive unavailable: ${this.googleDriveError}. Using local songs.`, "warning")
+      } else {
+        this.showNotification("Application initialized successfully", "success")
+      }
     } catch (error) {
       this.hideProcessing()
       this.showNotification("Error initializing application", "error")
@@ -199,23 +224,23 @@ export class AppComponent implements OnInit {
       await this.delay(800)
 
       this.updateProgress(25)
-      this.processingDetail = "Processing song lyrics"
+      this.processingDetail = "Processing song lyrics and slides"
       await this.delay(1000)
 
       this.updateProgress(45)
-      this.processingDetail = "Integrating media assets"
+      this.processingDetail = "Embedding media assets (videos and images)"
       await this.delay(1200)
 
       this.updateProgress(65)
-      this.processingDetail = "Applying transitions and effects"
+      this.processingDetail = "Scaling media to fit slide dimensions"
       await this.delay(800)
 
       this.updateProgress(80)
-      this.processingDetail = "Optimizing presentation"
+      this.processingDetail = "Applying transitions and optimizations"
       await this.delay(600)
 
       this.updateProgress(95)
-      this.processingDetail = "Finalizing export"
+      this.processingDetail = "Finalizing PowerPoint export"
       await this.delay(400)
 
       await this.presentationService.generatePresentation(
@@ -229,10 +254,15 @@ export class AppComponent implements OnInit {
       await this.delay(300)
       this.hideProcessing()
 
-      this.showNotification(`Presentation "${exportData.name}" generated successfully`, "success")
+      this.showNotification(
+        `Presentation "${exportData.name}" generated successfully! Check your downloads folder.`,
+        "success",
+      )
     } catch (error) {
       this.hideProcessing()
-      this.showNotification("Error generating presentation", "error")
+      const errorMessage = error instanceof Error ? error.message : "Unknown error occurred"
+      this.showNotification(`PowerPoint generation failed: ${errorMessage}`, "error")
+      console.error("PowerPoint generation error:", error)
     }
   }
 
@@ -358,6 +388,22 @@ export class AppComponent implements OnInit {
         return "ℹ️"
       default:
         return "ℹ️"
+    }
+  }
+
+  async retryGoogleDriveConnection() {
+    this.showProcessing("Reconnecting to Google Drive...", "Attempting to sync songs")
+
+    try {
+      this.availableSongs = await this.songService.refreshSongsFromDrive()
+      this.lastSyncTime = new Date()
+      this.googleDriveError = null
+      this.hideProcessing()
+      this.showNotification(`Successfully synced ${this.availableSongs.length} songs from Google Drive`, "success")
+    } catch (error) {
+      this.googleDriveError = error instanceof Error ? error.message : "Unknown error"
+      this.hideProcessing()
+      this.showNotification(`Google Drive sync failed: ${this.googleDriveError}`, "error")
     }
   }
 }
