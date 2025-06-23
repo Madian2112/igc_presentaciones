@@ -14,6 +14,8 @@ export interface Song {
     thumbnailUrl?: string
     driveFileId?: string
     lastModified?: string
+    webViewLink?: string
+    webContentLink?: string
   }
 }
 

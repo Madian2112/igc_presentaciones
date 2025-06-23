@@ -3,7 +3,7 @@ import { Song } from '../models/presentation.model';
 import { GoogleDriveFile } from '../models/google-drive-file';
 import { GoogleDriveResponse } from '../models/google-drive-response';
 import { environment } from '../../environments/environment';
-import orderBy  from 'lodash/orderBy'
+import orderBy from 'lodash/orderBy'
 
 @Injectable({
   providedIn: 'root'
@@ -29,7 +29,7 @@ export class GoogleDriveService {
       }
 
       const cancionesOrdenadas = orderBy(songs, ['name'], ['asc'])
-      console.log(`Estas son las canciones me devuelve: `, cancionesOrdenadas);
+      console.log(`✅ Loaded ${cancionesOrdenadas.length} songs from Google Drive`)
       return cancionesOrdenadas
     } catch (error) {
       console.error("❌ Error loading songs from Google Drive:", error)
@@ -93,44 +93,40 @@ export class GoogleDriveService {
   }
 
   private async convertFileToSong(file: GoogleDriveFile): Promise<Song> {
-    // Extract song metadata from filename and file properties
     const songName = this.extractSongName(file.name)
     const slideCount = await this.estimateSlideCount(file)
 
     return {
       id: file.id,
       name: songName,
-      source: file.webContentLink || file.webViewLink,
+      source: `Public/letras/${file.name}`, // Mantener formato original para mostrar
       slideCount: slideCount,
       lyrics: await this.extractLyricsPreview(file),
       metadata: {
         artist: this.extractArtist(file.name),
-        genre: "Worship",
+        genre: "Worship", 
         year: new Date(file.modifiedTime).getFullYear(),
-        fileSize: Number.parseInt(file.size) || 0,
+        fileSize: parseInt(file.size) || 0,
         mimeType: file.mimeType,
         thumbnailUrl: file.thumbnailLink,
-        driveFileId: file.id,
+        driveFileId: file.id, // ✅ ESTO ES CLAVE para el copy-paste
         lastModified: file.modifiedTime,
+        // ✅ También guardamos los links de descarga
+        webViewLink: file.webViewLink,
+        webContentLink: file.webContentLink
       },
     }
   }
 
   private extractSongName(filename: string): string {
-    // Remove file extension and clean up the name
     let name = filename.replace(/\.(ppt|pptx)$/i, "")
-
-    // Handle common naming patterns
-    name = name.replace(/^\d+[\s\-.]*/, "") // Remove leading numbers
-    name = name.replace(/[-_]/g, " ") // Replace dashes and underscores with spaces
-    name = name.replace(/\s+/g, " ").trim() // Normalize whitespace
-
-    // Capitalize first letter of each word
+    name = name.replace(/^\d+[\s\-.]*/, "")
+    name = name.replace(/[-_]/g, " ")
+    name = name.replace(/\s+/g, " ").trim()
     return name.replace(/\b\w/g, (l) => l.toUpperCase())
   }
 
   private extractArtist(filename: string): string {
-    // Try to extract artist from filename patterns like "Artist - Song Title"
     const match = filename.match(/^([^-]+)\s*-\s*(.+)/)
     if (match) {
       return match[1].trim()
@@ -139,8 +135,7 @@ export class GoogleDriveService {
   }
 
   private async estimateSlideCount(file: GoogleDriveFile): Promise<number> {
-    // For now, estimate based on file size (this could be enhanced with actual slide parsing)
-    const sizeInKB = Number.parseInt(file.size) / 1024
+    const sizeInKB = parseInt(file.size) / 1024
 
     if (sizeInKB < 100) return 2
     if (sizeInKB < 300) return 4
@@ -150,39 +145,55 @@ export class GoogleDriveService {
   }
 
   private async extractLyricsPreview(file: GoogleDriveFile): Promise<string[]> {
-    // This would require more complex parsing of the PowerPoint file
-    // For now, return a placeholder based on the song name
     const songName = this.extractSongName(file.name)
 
     return [
       `🎵 ${songName.toUpperCase()} 🎵`,
-      "Verse 1:\n[Lyrics will be loaded from PowerPoint]",
-      "Chorus:\n[Lyrics will be loaded from PowerPoint]",
-      "Verse 2:\n[Lyrics will be loaded from PowerPoint]",
-      "Bridge:\n[Lyrics will be loaded from PowerPoint]",
-      "Final:\n[Lyrics will be loaded from PowerPoint]",
+      "Verse 1:\n[Lyrics will be extracted from PowerPoint]",
+      "Chorus:\n[Lyrics will be extracted from PowerPoint]", 
+      "Verse 2:\n[Lyrics will be extracted from PowerPoint]",
+      "Bridge:\n[Lyrics will be extracted from PowerPoint]",
+      "Final:\n[Lyrics will be extracted from PowerPoint]",
     ]
   }
 
+  // ✅ Método mejorado para descargar archivos
   async downloadFile(fileId: string): Promise<Blob> {
     try {
-      const url = `${environment.BASE_URL_DRIVE}/files/${fileId}?alt=media&key=${environment.API_KEY_GOOGLE}`
+      console.log(`📥 Downloading file from Google Drive: ${fileId}`)
+      
+      // Para archivos de Google Apps (Google Slides), necesitamos exportarlos
+      const fileMetadata = await this.getFileMetadata(fileId)
+      
+      let url: string
+      
+      if (fileMetadata.mimeType === "application/vnd.google-apps.presentation") {
+        // Exportar Google Slides como PowerPoint
+        url = `${environment.BASE_URL_DRIVE}/files/${fileId}/export?mimeType=application/vnd.openxmlformats-officedocument.presentationml.presentation&key=${environment.API_KEY_GOOGLE}`
+      } else {
+        // Descargar archivo PowerPoint nativo
+        url = `${environment.BASE_URL_DRIVE}/files/${fileId}?alt=media&key=${environment.API_KEY_GOOGLE}`
+      }
+
       const response = await fetch(url)
 
       if (!response.ok) {
         throw new Error(`Failed to download file: ${response.status} ${response.statusText}`)
       }
 
-      return await response.blob()
+      const blob = await response.blob()
+      console.log(`✅ Downloaded file: ${blob.size} bytes`)
+      return blob
+      
     } catch (error) {
-      console.error("Error downloading file:", error)
+      console.error("❌ Error downloading file:", error)
       throw error
     }
   }
 
   async getFileMetadata(fileId: string): Promise<GoogleDriveFile> {
     try {
-      const url = `${environment.BASE_URL_DRIVE}/files/${fileId}?fields=id,name,mimeType,size,modifiedTime,thumbnailLink&key=${environment.API_KEY_GOOGLE}`
+      const url = `${environment.BASE_URL_DRIVE}/files/${fileId}?fields=id,name,mimeType,size,modifiedTime,thumbnailLink,webViewLink,webContentLink&key=${environment.API_KEY_GOOGLE}`
       const response = await fetch(url)
 
       if (!response.ok) {
@@ -193,6 +204,18 @@ export class GoogleDriveService {
     } catch (error) {
       console.error("Error getting file metadata:", error)
       throw error
+    }
+  }
+
+  // ✅ Método adicional para verificar permisos
+  async testDriveConnection(): Promise<boolean> {
+    try {
+      const response = await fetch(
+        `${environment.BASE_URL_DRIVE}/files/${environment.FOLDER_ID_DRIVE}?key=${environment.API_KEY_GOOGLE}`
+      )
+      return response.ok
+    } catch {
+      return false
     }
   }
 }
