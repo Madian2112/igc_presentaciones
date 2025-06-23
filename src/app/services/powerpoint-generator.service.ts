@@ -85,7 +85,7 @@ export class PowerpointGeneratorService {
       const driveFileId = item.metadata?.originalSong?.metadata?.driveFileId
       
       if (!driveFileId) {
-        console.warn(`No Drive file ID found for ${item.name}, using fallback`)
+        console.warn(`❌ No Drive file ID found for ${item.name}, using fallback`)
         await this.addFallbackSongSlides(pptx, item, options)
         return
       }
@@ -93,21 +93,52 @@ export class PowerpointGeneratorService {
       // Download the PowerPoint file from Google Drive
       console.log(`📥 Downloading PowerPoint file: ${driveFileId}`)
       const pptxBlob = await this.googleDriveService.downloadFile(driveFileId)
+      console.log(`✅ Downloaded blob size: ${pptxBlob.size} bytes`)
       
       // Extract slides from the downloaded PowerPoint
       const extractedSlides = await this.extractSlidesFromPowerPoint(pptxBlob)
+      console.log(`📄 Extracted ${extractedSlides.length} slides`)
+      
+      if (extractedSlides.length === 0) {
+        console.warn(`⚠️ No slides extracted from ${item.name}, using fallback`)
+        await this.addFallbackSongSlides(pptx, item, options)
+        return
+      }
       
       // Add each extracted slide to the main presentation
       for (let i = 0; i < extractedSlides.length; i++) {
-        console.log(`📄 Adding slide ${i + 1}/${extractedSlides.length} from ${item.name}`)
-        await this.addExtractedSlide(pptx, extractedSlides[i], options)
+        console.log(`📄 Processing slide ${i + 1}/${extractedSlides.length} from ${item.name}`)
+        
+        // 🔍 DEBUG: mostrar contenido detallado de la diapositiva
+        const slideData = extractedSlides[i]
+        console.log(`📝 Slide ${i + 1} raw content:`, {
+          textCount: slideData.textContent?.length || 0,
+          texts: slideData.textContent,
+          backgroundColor: slideData.backgroundColor,
+          imageCount: slideData.images?.length || 0
+        })
+        
+        // 🔍 DEBUG: mostrar cada elemento de texto individualmente
+        if (slideData.textContent && slideData.textContent.length > 0) {
+          slideData.textContent.forEach((text: string, index: number) => {
+            console.log(`📝 Text element ${index + 1}:`, {
+              content: `"${text}"`,
+              length: text.length,
+              hasLineBreaks: text.includes('\n'),
+              startsWithSpace: text.startsWith(' '),
+              endsWithSpace: text.endsWith(' ')
+            })
+          })
+        }
+        
+        await this.addExtractedSlide(pptx, slideData, options)
       }
 
       console.log(`✅ Successfully added ${extractedSlides.length} slides from ${item.name}`)
       
     } catch (error) {
       console.error(`❌ Failed to extract real slides from ${item.name}:`, error)
-      // Fallback to generated slides if extraction fails
+      console.log(`🔄 Falling back to generated slides for ${item.name}`)
       await this.addFallbackSongSlides(pptx, item, options)
     }
   }
@@ -170,58 +201,150 @@ export class PowerpointGeneratorService {
     const texts: string[] = []
     
     try {
-      // Buscar todas las etiquetas <a:t> que contienen el texto real
+      console.log("🔍 Extracting text from XML...")
+      
+      // Método 1: Usar DOMParser para parsing más robusto
+      const cleanTexts = this.extractTextWithDOMParser(xml)
+      if (cleanTexts.length > 0) {
+        console.log("✅ Successfully extracted text with DOMParser:", cleanTexts)
+        return cleanTexts
+      }
+      
+      // Método 2: Extracción por párrafos completos (preserva formato mejor)
+      const paragraphTexts = this.extractTextByParagraphs(xml)
+      if (paragraphTexts.length > 0) {
+        console.log("✅ Successfully extracted text by paragraphs:", paragraphTexts)
+        return paragraphTexts
+      }
+      
+      // Método 3: Regex mejorado como fallback
+      const regexTexts = this.extractTextWithRegex(xml)
+      if (regexTexts.length > 0) {
+        console.log("✅ Successfully extracted text with Regex:", regexTexts)
+        return regexTexts
+      }
+      
+      console.warn("⚠️ No text could be extracted from XML")
+      return []
+      
+    } catch (error) {
+      console.error("❌ Error extracting text from XML:", error)
+      return []
+    }
+  }
+  
+  private extractTextByParagraphs(xml: string): string[] {
+    const paragraphs: string[] = []
+    
+    try {
+      // Buscar párrafos completos que preserven mejor el formato original
+      const paragraphRegex = /<a:p[^>]*>([\s\S]*?)<\/a:p>/g
+      let match
+      
+      while ((match = paragraphRegex.exec(xml)) !== null) {
+        const paragraphXml = match[1]
+        
+        // Extraer todo el texto de este párrafo manteniendo el orden
+        const paragraphText = this.extractTextFromSingleParagraph(paragraphXml)
+        
+        if (paragraphText && this.isValidText(paragraphText)) {
+          paragraphs.push(paragraphText)
+        }
+      }
+      
+      return paragraphs
+      
+    } catch (error) {
+      console.warn("Paragraph extraction failed:", error)
+      return []
+    }
+  }
+  
+  private extractTextFromSingleParagraph(paragraphXml: string): string {
+    const textSegments: string[] = []
+    
+    try {
+      // Buscar todos los elementos de texto en orden
       const textRegex = /<a:t[^>]*>([\s\S]*?)<\/a:t>/g
       let match
       
-      while ((match = textRegex.exec(xml)) !== null) {
-        let text = match[1]
+      while ((match = textRegex.exec(paragraphXml)) !== null) {
+        const rawText = match[1]
+        const cleanText = this.cleanXmlText(rawText)
         
-        // Limpiar entidades HTML
-        text = text
-          .replace(/&lt;/g, '<')
-          .replace(/&gt;/g, '>')
-          .replace(/&amp;/g, '&')
-          .replace(/&quot;/g, '"')
-          .replace(/&apos;/g, "'")
-          .trim()
-        
-        if (text && text.length > 0) {
+        if (cleanText && cleanText.trim().length > 0) {
+          textSegments.push(cleanText.trim())
+        }
+      }
+      
+      // Unir los segmentos con espacios (no saltos de línea)
+      return textSegments.join(' ').trim()
+      
+    } catch (error) {
+      console.warn("Error extracting text from paragraph:", error)
+      return ''
+    }
+  }
+  
+  private extractTextWithDOMParser(xml: string): string[] {
+    try {
+      // Envolver el XML en un elemento raíz para parsearlo correctamente
+      const wrappedXml = `<root xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">${xml}</root>`
+      
+      const parser = new DOMParser()
+      const doc = parser.parseFromString(wrappedXml, 'text/xml')
+      
+      // Verificar si hubo errores de parsing
+      const parserError = doc.querySelector('parsererror')
+      if (parserError) {
+        console.warn("DOMParser error:", parserError.textContent)
+        return []
+      }
+      
+      // Buscar todos los elementos <a:t>
+      const textElements = doc.querySelectorAll('t')
+      const texts: string[] = []
+      
+      textElements.forEach(element => {
+        const text = element.textContent?.trim()
+        if (text && text.length > 0 && this.isValidText(text)) {
           texts.push(text)
         }
-      }
-      
-      // Si no encontramos texto con el primer método, intentar con un enfoque más amplio
-      if (texts.length === 0) {
-        console.log("⚠️ No text found with primary method, trying alternative extraction...")
-        
-        // Buscar patrones de texto alternativos
-        const alternativeRegex = /<a:t>([\s\S]*?)<\/a:t>/g
-        let altMatch
-        
-        while ((altMatch = alternativeRegex.exec(xml)) !== null) {
-          let text = altMatch[1]
-          text = this.cleanXmlText(text)
-          
-          if (text && text.length > 0) {
-            texts.push(text)
-          }
-        }
-      }
-      
-      // Si aún no hay texto, buscar cualquier contenido de texto en el XML
-      if (texts.length === 0) {
-        console.log("⚠️ Still no text found, extracting from text blocks...")
-        const textBlocks = this.extractTextBlocks(xml)
-        texts.push(...textBlocks)
-      }
+      })
       
       return texts
       
     } catch (error) {
-      console.error("❌ Error extracting text from XML:", error)
-      return [`Error extracting text: ${error}`]
+      console.warn("DOMParser extraction failed:", error)
+      return []
     }
+  }
+  
+  private extractTextWithRegex(xml: string): string[] {
+    const texts: string[] = []
+    
+    // Regex mejorado para capturar contenido de <a:t>
+    const patterns = [
+      /<a:t[^>]*>([\s\S]*?)<\/a:t>/g,
+      /<a:t>([\s\S]*?)<\/a:t>/g,
+      /&gt;([^&<]+)&lt;/g  // Texto entre entidades escapadas
+    ]
+    
+    for (const pattern of patterns) {
+      let match
+      while ((match = pattern.exec(xml)) !== null) {
+        const rawText = match[1]
+        const cleanText = this.cleanXmlText(rawText)
+        
+        if (cleanText && this.isValidText(cleanText)) {
+          texts.push(cleanText)
+        }
+      }
+      
+      if (texts.length > 0) break // Si encontramos texto, no necesitamos más patrones
+    }
+    
+    return texts
   }
   
   private cleanXmlText(text: string): string {
@@ -239,6 +362,15 @@ export class PowerpointGeneratorService {
     const textBlocks: string[] = []
     
     try {
+      console.log("🔧 Extracting text blocks as last resort...")
+      
+      // Método de emergencia: extraer texto que parezca contenido real
+      const emergencyTexts = this.emergencyTextExtraction(xml)
+      if (emergencyTexts.length > 0) {
+        console.log("🆘 Emergency extraction succeeded:", emergencyTexts)
+        return emergencyTexts
+      }
+      
       // Buscar bloques de párrafo que contengan texto
       const paragraphRegex = /<a:p[^>]*>([\s\S]*?)<\/a:p>/g
       let match
@@ -248,7 +380,7 @@ export class PowerpointGeneratorService {
         
         // Extraer texto de este párrafo
         const textInParagraph = this.extractTextFromParagraph(paragraphContent)
-        if (textInParagraph) {
+        if (textInParagraph && this.isValidText(textInParagraph)) {
           textBlocks.push(textInParagraph)
         }
       }
@@ -259,6 +391,54 @@ export class PowerpointGeneratorService {
       console.error("❌ Error extracting text blocks:", error)
       return []
     }
+  }
+  
+  private emergencyTextExtraction(xml: string): string[] {
+    const texts: string[] = []
+    
+    try {
+      // Buscar texto que esté claramente en mayúsculas (común en letras de canciones)
+      const uppercaseTextRegex = /([A-ZÁÉÍÓÚÜÑ][A-ZÁÉÍÓÚÜÑ\s,.\-!?]{10,})/g
+      let match
+      
+      while ((match = uppercaseTextRegex.exec(xml)) !== null) {
+        const text = match[1].trim()
+        if (this.isValidText(text) && !this.containsXmlArtifacts(text)) {
+          texts.push(text)
+        }
+      }
+      
+      // Si no encontramos texto en mayúsculas, buscar frases largas
+      if (texts.length === 0) {
+        const phraseRegex = /([A-Za-záéíóúüñÁÉÍÓÚÜÑ][A-Za-záéíóúüñÁÉÍÓÚÜÑ\s,.\-!?]{15,})/g
+        
+        while ((match = phraseRegex.exec(xml)) !== null) {
+          const text = match[1].trim()
+          if (this.isValidText(text) && !this.containsXmlArtifacts(text)) {
+            texts.push(text)
+          }
+        }
+      }
+      
+      return texts
+      
+    } catch (error) {
+      console.error("Emergency text extraction failed:", error)
+      return []
+    }
+  }
+  
+  private containsXmlArtifacts(text: string): boolean {
+    const xmlArtifacts = [
+      'kumimoji', 'lang=', 'sz=', 'kern=', 'cap=', 'spc=',
+      'normalizeH=', 'baseline=', 'noProof=', 'dirty=',
+      'typeface=', 'pitchFamily=', 'charset=', 'panose=',
+      'blurRad=', 'dist=', 'dir=', 'algn=',
+      'defRPr', 'solidFill', 'prstClr', 'effectLst',
+      'outerShdw', 'srgbClr', 'alpha', 'uLnTx', 'uFillTx'
+    ]
+    
+    return xmlArtifacts.some(artifact => text.includes(artifact))
   }
   
   private extractTextFromParagraph(paragraphXml: string): string {
@@ -302,7 +482,7 @@ export class PowerpointGeneratorService {
     return match ? match[1] : "000000" // Default to black if no background found
   }
 
-  private async extractMediaFiles(zip: any): Promise<{ [key: string]: string }> {
+private async extractMediaFiles(zip: any): Promise<{ [key: string]: string }> {
     const mediaFiles: { [key: string]: string } = {}
     
     // Extract media files from the PowerPoint
@@ -315,7 +495,6 @@ export class PowerpointGeneratorService {
             const blob = await zipFile.async('blob')
             mediaFiles[fileName] = await this.blobToBase64(blob)
           } catch (error) {
-            console.warn(`Failed to extract media file ${fileName}:`, error)
           }
         }
       }
@@ -337,46 +516,114 @@ export class PowerpointGeneratorService {
         fill: slideData.backgroundColor,
         line: { width: 0 }
       })
+    } else {
+      // Default dark background if no background detected
+      slide.addShape(pptx.shapes.RECTANGLE, {
+        x: 0,
+        y: 0,
+        w: "100%",
+        h: "100%",
+        fill: "000000", // Negro como en las imágenes originales
+        line: { width: 0 }
+      })
     }
 
-    // Add text content
+    // Add text content - PRESERVANDO EL FORMATO ORIGINAL
     if (slideData.textContent && slideData.textContent.length > 0) {
-      const combinedText = slideData.textContent.join('\n')
+      console.log("📝 Adding text to slide:", slideData.textContent)
       
-      slide.addText(combinedText, {
+      // Filtrar y limpiar el texto
+      const cleanedTexts = slideData.textContent
+        .filter((text: any) => this.isValidText(text))
+        .map((text: any) => this.cleanDisplayText(text))
+        .filter((text: any)  => text.length > 0)
+      
+      if (cleanedTexts.length > 0) {
+        // 🔧 CAMBIO IMPORTANTE: No usar join('\n'), sino preservar formato original
+        let finalText = ''
+        
+        if (cleanedTexts.length === 1) {
+          // Si es un solo bloque de texto, usarlo tal como está
+          finalText = cleanedTexts[0]
+          console.log("✅ Single cleaned text block:", `"${finalText}"`)
+        } else {
+          // Si son múltiples bloques, unirlos inteligentemente
+          finalText = this.smartTextCombination(cleanedTexts)
+        }
+        
+        console.log("🎯 Final text for slide:", {
+          content: `"${finalText}"`,
+          length: finalText.length,
+          lineBreakCount: (finalText.match(/\n/g) || []).length,
+          startsWithSpace: finalText.startsWith(' '),
+          endsWithSpace: finalText.endsWith(' ')
+        })
+        
+        slide.addText(finalText, {
+          x: 0.5,
+          y: 1.5,
+          w: "90%",
+          h: "70%",
+          fontSize: options.optimizeForProjector ? 48 : 40, // Tamaño más grande como en original
+          color: "FFFFFF",
+          align: "center",
+          fontFace: "Arial Black", // Fuente más bold como en original
+          bold: true,
+          valign: "middle",
+          shadow: {
+            type: "outer",
+            blur: 3,
+            offset: 2,
+            angle: 45,
+            color: "000000",
+          },
+        })
+      } else {
+        // Si no hay texto válido, mostrar un placeholder
+        slide.addText("[ Contenido de la diapositiva original ]", {
+          x: 0.5,
+          y: 3,
+          w: "90%",
+          h: 2,
+          fontSize: 24,
+          color: "CCCCCC",
+          align: "center",
+          fontFace: "Arial",
+          italic: true,
+        })
+      }
+    } else {
+      // No text found in slide
+      slide.addText("[ Diapositiva sin contenido de texto ]", {
         x: 0.5,
-        y: 1,
+        y: 3,
         w: "90%",
-        h: "80%",
-        fontSize: options.optimizeForProjector ? 44 : 36,
-        color: "FFFFFF",
+        h: 2,
+        fontSize: 24,
+        color: "CCCCCC",
         align: "center",
         fontFace: "Arial",
-        bold: true,
-        valign: "middle",
-        shadow: {
-          type: "outer",
-          blur: 3,
-          offset: 2,
-          angle: 45,
-          color: "000000",
-        },
+        italic: true,
       })
     }
 
     // Add images if any
     if (slideData.images && slideData.mediaFiles) {
       for (const image of slideData.images) {
-        const mediaFile = Object.values(slideData.mediaFiles)[0] // Simple approach - use first media file
+        const mediaFile = Object.values(slideData.mediaFiles)[0]
         if (mediaFile) {
-          slide.addImage({
-            data: mediaFile,
-            x: 0,
-            y: 0,
-            w: "100%",
-            h: "100%",
-            sizing: { type: "contain" }
-          })
+          try {
+            slide.addImage({
+              data: mediaFile,
+              x: 0,
+              y: 0,
+              w: "100%",
+              h: "100%",
+              sizing: { type: "contain" }
+            })
+          } catch (error) {
+            console.warn("Failed to add image to slide:", error)
+          }
         }
       }
     }
@@ -385,6 +632,114 @@ export class PowerpointGeneratorService {
     if (options.includeTransitions) {
       slide.transition = { type: "fade", duration: 1000 }
     }
+  }
+  
+  private smartTextCombination(textBlocks: string[]): string {
+    console.log("🔧 Smart text combination - Input blocks:", textBlocks.map((block, i) => ({
+      index: i,
+      content: `"${block}"`,
+      length: block.length,
+      hasLineBreaks: block.includes('\n')
+    })))
+    
+    // Si solo hay un bloque, devolverlo tal como está
+    if (textBlocks.length === 1) {
+      console.log("✅ Single text block, returning as-is")
+      return textBlocks[0]
+    }
+    
+    // Analizar si los bloques de texto ya contienen saltos de línea intencionados
+    const hasInternalBreaks = textBlocks.some(block => block.includes('\n'))
+    
+    let result = ''
+    
+    if (hasInternalBreaks) {
+      // Si hay saltos de línea internos, preservarlos
+      result = textBlocks.join('\n')
+      console.log("✅ Found internal line breaks, joining with \\n")
+    } else {
+      // Si no hay saltos de línea internos, unir con espacios para mantener continuidad
+      result = textBlocks.join(' ')
+      console.log("✅ No internal line breaks, joining with spaces")
+    }
+    
+    console.log("🎯 Final combined text:", `"${result}"`)
+    return result
+  }
+  
+  private isValidText(text: string): boolean {
+    if (!text || text.trim().length === 0) {
+      return false
+    }
+    
+    // Verificar que el texto no contenga etiquetas XML
+    const hasXmlTags = /<[^>]+>/g.test(text)
+    if (hasXmlTags) {
+      console.log("❌ Text contains XML tags:", text.substring(0, 100) + "...")
+      return false
+    }
+    
+    // Verificar que no contenga muchas entidades XML
+    const xmlEntityCount = (text.match(/&[a-zA-Z]+;/g) || []).length
+    if (xmlEntityCount > 3) {
+      console.log("❌ Text contains too many XML entities:", text.substring(0, 100) + "...")
+      return false
+    }
+    
+    // Verificar que no sea solo caracteres de formato XML
+    const xmlFormatChars = /^[<>&;\s\/]+$/g.test(text)
+    if (xmlFormatChars) {
+      console.log("❌ Text contains only XML format characters:", text)
+      return false
+    }
+    
+    // Verificar que no contenga patrones de XML complejos
+    const complexXmlPatterns = [
+      /kumimoji=|lang=|sz=|kern=|cap=|spc=|normalizeH=|baseline=|noProof=|dirty=/,
+      /typeface=|pitchFamily=|charset=|panose=/,
+      /blurRad=|dist=|dir=|algn=/,
+      /<a:|<\/a:|<w:|<\/w:/
+    ]
+    
+    for (const pattern of complexXmlPatterns) {
+      if (pattern.test(text)) {
+        console.log("❌ Text contains complex XML patterns:", text.substring(0, 100) + "...")
+        return false
+      }
+    }
+    
+    // Verificar longitud razonable (texto muy largo podría ser XML)
+    if (text.length > 500) {
+      console.log("❌ Text is too long (likely XML):", text.length, "characters")
+      return false
+    }
+    
+    // El texto parece válido
+    console.log("✅ Valid text found:", text.substring(0, 50) + (text.length > 50 ? "..." : ""))
+    return true
+  }
+  
+  private cleanDisplayText(text: string): string {
+    return text
+      // Limpiar entidades HTML/XML
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&amp;/g, '&')
+      .replace(/&quot;/g, '"')
+      .replace(/&apos;/g, "'")
+      .replace(/&nbsp;/g, ' ')
+      
+      // Eliminar cualquier etiqueta XML restante
+      .replace(/<[^>]*>/g, '')
+      
+      // Normalizar espacios
+      .replace(/\s+/g, ' ')
+      .replace(/\n\s*\n/g, '\n')
+      
+      // Eliminar caracteres de control
+      .replace(/[\x00-\x1F\x7F]/g, '')
+      
+      .trim()
   }
 
   private async addFallbackSongSlides(pptx: any, item: PresentationItem, options: ExportOptions): Promise<void> {
