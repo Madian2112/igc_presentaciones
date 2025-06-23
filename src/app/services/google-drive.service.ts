@@ -3,6 +3,7 @@ import { Song } from '../models/presentation.model';
 import { GoogleDriveFile } from '../models/google-drive-file';
 import { GoogleDriveResponse } from '../models/google-drive-response';
 import { environment } from '../../environments/environment';
+import orderBy  from 'lodash/orderBy'
 
 @Injectable({
   providedIn: 'root'
@@ -21,15 +22,15 @@ export class GoogleDriveService {
           try {
             const song = await this.convertFileToSong(file)
             songs.push(song)
-            console.log(`✅ Loaded song: ${song.name}`)
           } catch (error) {
             console.warn(`⚠️ Failed to process file ${file.name}:`, error)
           }
         }
       }
 
-      console.log(`🎵 Successfully loaded ${songs.length} songs from Google Drive`)
-      return songs
+      const cancionesOrdenadas = orderBy(songs, ['name'], ['asc'])
+      console.log(`Estas son las canciones me devuelve: `, cancionesOrdenadas);
+      return cancionesOrdenadas
     } catch (error) {
       console.error("❌ Error loading songs from Google Drive:", error)
       throw new Error(

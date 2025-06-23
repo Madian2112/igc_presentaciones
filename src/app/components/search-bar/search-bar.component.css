@@ -117,6 +117,7 @@
   backdrop-filter: blur(10px);
   box-shadow: var(--shadow-sm);
   font-weight: 500;
+  margin-left: 0.8em;
 }
 
 .search-input::placeholder {
@@ -232,6 +233,11 @@
   color: var(--text-secondary);
   border-color: var(--card-border-hover);
   transform: translateY(-1px);
+}
+
+.songs-container {
+  overflow-y: auto;  /* Esto añadirá scroll vertical cuando sea necesario */
+  max-height: 70vh;  /* O cualquier altura que prefieras */
 }
 
 .songs-container.view-grid {

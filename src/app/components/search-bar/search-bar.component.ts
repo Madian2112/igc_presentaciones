@@ -3,6 +3,7 @@ import { SongService } from '../../services/song.service';
 import { Song } from '../../models/presentation.model';
 
 import { FormsModule } from '@angular/forms';
+import { debounceTime, distinctUntilChanged, Subject } from 'rxjs';
 
 @Component({
   selector: 'app-search-bar',
@@ -199,10 +200,20 @@ export class SearchBarComponent implements OnInit {
   loadingMessage = ""
   loadingDetail = ""
 
+  private searchTerms = new Subject<string>();
+
+
   constructor(private songService: SongService) {}
 
   ngOnInit() {
     this.searchResults = [...this.songs]
+
+    this.searchTerms.pipe(
+      debounceTime(300), // Espera 300ms después de la última tecla
+      distinctUntilChanged() // Ignora si es el mismo término anterior
+    ).subscribe(term => {
+      this.searchByName(term);
+    });
   }
 
   ngOnChanges() {
@@ -211,14 +222,24 @@ export class SearchBarComponent implements OnInit {
     }
   }
 
+  searchByName(searchTerm: string) {
+    if (!searchTerm) {
+      this.searchResults = [...this.songs]; // Restaura la lista original
+      return;
+    } 
+
+    // Búsqueda eficiente por nombre
+    this.searchResults = this.songs.filter(song => 
+      song.name.toLowerCase().includes(searchTerm)
+    );
+  }
+
   trackBySong(index: number, song: Song): string {
     return song.id
   }
 
   onSearchInput() {
-    if (this.searchQuery.length === 0) {
-      this.searchResults = [...this.songs]
-    }
+    this.searchTerms.next(this.searchQuery.trim().toLowerCase());
   }
 
   async performSearch() {
@@ -237,8 +258,8 @@ export class SearchBarComponent implements OnInit {
   }
 
   clearSearch() {
-    this.searchQuery = ""
-    this.searchResults = [...this.songs]
+    this.searchQuery = "";
+    this.searchResults = [...this.songs]; // Restaura la lista original
   }
 
   showAllSongs() {
